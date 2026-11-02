@@ -1,0 +1,8 @@
+**/.pio/
+**/managed_components/
+**/__pycache__/
+**/*.pyc
+build/
+.venv/
+.vscode/
+**/sdkconfig.*.old

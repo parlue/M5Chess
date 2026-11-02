@@ -1,0 +1,11 @@
+[submodule "esp32_core2/components/M5Unified"]
+	path = esp32_core2/components/M5Unified
+	url = https://github.com/m5stack/M5Unified.git
+
+[submodule "esp32_core2/components/M5GFX"]
+	path = esp32_core2/components/M5GFX
+	url = https://github.com/m5stack/M5GFX.git
+
+[submodule "esp32_core2/components/esp-nimble-cpp"]
+	path = esp32_core2/components/esp-nimble-cpp
+	url = https://github.com/h2zero/esp-nimble-cpp.git

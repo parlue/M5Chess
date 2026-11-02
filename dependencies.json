@@ -1,0 +1,14 @@
+{
+  "M5Unified": {
+    "url": "https://github.com/m5stack/M5Unified.git",
+    "commit": "44952cb8e4ac88bf04ad23b9dfd6f4b05c788348"
+  },
+  "M5GFX": {
+    "url": "https://github.com/m5stack/M5GFX.git",
+    "commit": "7cb26b44ab31bb41a0a597196dd2c6d868869a21"
+  },
+  "esp-nimble-cpp": {
+    "url": "https://github.com/h2zero/esp-nimble-cpp.git",
+    "commit": "861956a2c343aee66698a57b48519be0931775d6"
+  }
+}
