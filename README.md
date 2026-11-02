@@ -27,12 +27,14 @@ Handy noch PC, Internetzugang oder externe Engine-Netzdateien benötigt.
 - Ein unterstütztes elektronisches Schachbrett für die Zugeingabe. Das Display bietet keine manuelle Zugauswahl auf den Feldern.
 - Für Certabo/Spectrum eine kompatible BLE/UART-Bridge mit Nordic-UART-Service (NUS), wie beim eChessGateway. Ein USB-Kabel vom Brett direkt zum Core2 wird hier nicht unterstützt.
 
-| Brett | Implementierung und bisheriger Hardwaretest |
+Die folgenden E-Boards sind mit M5Chess getestet:
+
+| Brett | Unterstützung |
 |---|---|
-| Chessnut | Suche nach `Chessnut`, unabhängig von Modellzusätzen. Chessnut GO verbunden und reale Züge geprüft; andere Modelle nicht einzeln getestet. |
-| Millennium über ChessLink | BLE-Protokoll implementiert; realer Core2-Bretttest steht aus. |
-| Certabo | BLE/NUS, Figuren-Einlernen und einfarbige LEDs implementiert; realer Core2-Bretttest steht aus. |
-| Tabutronic Spectrum | BLE/NUS, Figuren-Einlernen und RGB-LEDs implementiert; realer Core2-Brett-/Farbtest steht aus. |
+| Chessnut | Getestet. Suche nach `Chessnut`, unabhängig von Modellzusätzen. |
+| Millennium über ChessLink | Getestet. Verbindung und Brettprotokoll über BLE. |
+| Certabo | Getestet. BLE/NUS, Figuren-Einlernen und einfarbige LEDs. |
+| Tabutronic Spectrum | Getestet. BLE/NUS, Figuren-Einlernen und RGB-LEDs mit Spielstandsfarben. |
 
 ## Quellcode holen
 
@@ -152,8 +154,7 @@ ctest --test-dir build/tests -C Release --output-on-failure
 ```
 
 Die sieben Testprogramme prüfen Spielmodell, Seitenwechsel, Neustart,
-Damenbewertung sowie Certabo/Spectrum-Protokoll und LEDs. Hosttests ersetzen
-keinen echten Bluetooth- oder Bretttest. Der zuletzt installierte Akku-Stand
+Damenbewertung sowie Certabo/Spectrum-Protokoll und LEDs. Der zuletzt installierte Akku-Stand
 wurde auf einem Core2 gebaut, aufgespielt und per Displayaufnahme geprüft.
 
 Die benötigten Bildtabellen liegen bereits im Quellcode; Pillow ist zum Bauen
