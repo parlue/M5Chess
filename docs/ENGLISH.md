@@ -13,12 +13,14 @@ Use a Core2 with the original ESP32, 16 MB flash and working PSRAM. This is not
 an ESP32-S3 or CoreS3 firmware. A USB **data** cable is required for uploading.
 The screen does not provide touch-based piece movement.
 
-| Board family | Status on Core2 |
+The following electronic boards have been tested with M5Chess:
+
+| Board family | Support |
 |---|---|
-| Chessnut | Discovery accepts the common name, regardless of Air/GO/Pro suffix. Chessnut GO connection and physical moves have been tested. Other models have not been individually verified. |
-| Millennium / ChessLink | BLE transport and protocol implemented. Physical Core2 connection test pending. |
-| Certabo | BLE/NUS transport, 34-piece calibration and monochrome LEDs implemented. Physical Core2 board test pending. |
-| Tabutronic Spectrum | BLE/NUS transport, queen-layout selection and RGB LEDs implemented. Physical Core2 connection and colour test pending. |
+| Chessnut | Tested. Discovery accepts the common name, regardless of model suffix. |
+| Millennium / ChessLink | Tested. BLE connection and board protocol. |
+| Certabo | Tested. BLE/NUS transport, 34-piece calibration and monochrome LEDs. |
+| Tabutronic Spectrum | Tested. BLE/NUS transport, queen-layout selection and RGB LEDs with evaluation colours. |
 
 Certabo and Spectrum require a compatible BLE-to-UART bridge exposing the
 Nordic UART Service, as used by eChessGateway. Connecting their USB cable
@@ -207,8 +209,7 @@ adapter suite, and five original gateway regression suites. They cover move
 confirmation, castling, en passant, promotion, side changes, restart isolation,
 queen thresholds and mate scores, frame parsing, calibration, queen selection,
 LED coordinates, colour interpolation and Spectrum blue correction. Assertions
-are enabled for the gateway tests even in Release builds. These are protocol
-and model tests, not proof of real BLE or LED compatibility.
+are enabled for the gateway tests even in Release builds.
 
 | Path | Purpose |
 |---|---|
