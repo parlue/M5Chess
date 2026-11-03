@@ -1,7 +1,8 @@
 # M5Chess: build, installation and user guide
 
 M5Chess is a standalone chess application for the **M5Stack Core2**, written by
-**Dirk D. Sommerfeld**. The Virgin engine runs on the device in Adaptive mode.
+**Dirk D. Sommerfeld**. The Virgin engine starts in Adaptive mode, with full-strength play and Elo bots
+also available through the three controls below the display.
 No phone, computer, Internet connection or external neural-network files are
 needed during play. A supported electronic board supplies the moves.
 
@@ -99,11 +100,66 @@ physical execution. Partial or mismatched board positions cannot force a move.
 
 Rebuilding the complete starting position starts a new game and restores you
 to White. Repeated identical start-position reports do not cancel Virgin's
-opening move. There is no New Game button and no persistent game archive.
+opening move. **A / Neu** also starts a new game; see the controls below.
+There is no persistent game archive.
 There is no automatic reconnection after a disconnect; choose Connect again.
 
 The connection button is labelled **Brett** (Board) while connected. Selecting
 it opens discovery and disconnects the current board.
+
+## Controls and playing modes
+
+The Core2 has three touch buttons below the display, separate from its side
+power buttons. The **A:Neu**, **B:Mod**, and **C:Bot** labels in the header can
+also be tapped.
+
+| Control | Action |
+|---|---|
+| **A / Neu**, left | Start a new game as White and restore the complete starting position. Keep the current board connection. |
+| **B / Mod**, centre | Switch between **ADAPTIV** and **VOLLE KRAFT** (full strength). Leave any selected Elo bot. |
+| **C / Bot**, right | Open or close the Elo tile picker. Tap a tile to choose a bot. |
+
+Adaptive is the power-on default. It searches at full speed and adapts its move
+selection. Full strength disables Adaptive and Elo limiting, using the Normal
+profile. All modes retain the fixed **2.5-second** search budget; full strength
+does not mean unlimited thinking time.
+
+The picker displays all **17 Elo targets, 900–2500 in steps of 100**, in four
+columns and five rows. The selected target is highlighted. **Zurück** (Back)
+closes the picker without changing the mode. Every Elo bot uses **Fire**, stage
+4 of the five styles, rather than Thunder. These are engine strength-limit
+targets, not measured Core2 tournament ratings. Switching modes or selecting a
+bot preserves the current game and board connection. Starting a new game keeps
+the chosen mode or bot; power cycling restores Adaptive.
+
+![Elo tile picker](images/bot-tiles.png)
+
+## Engine duels and virtual starting positions
+
+The Core2 can connect over Bluetooth to the virtual board provided by
+[eChessGateway](https://github.com/parlue/eChessGw), with a chess computer such
+as the Millennium Phoenix attached to the gateway's serial interface. Board
+confirmation follows the same complete piece-position model as a real board.
+Captures and promotions are confirmed by the actual destination piece, not by
+a default assumption that every promotion creates a queen.
+
+Pressing **A / Neu** resets the Core2 game and sends the full 64-square starting
+position to a compatible virtual gateway. The gateway publishes it to both
+sides. Phoenix recognises the starting position itself; no chess-computer reset
+command is sent, and no restart or Bluetooth reconnection is required.
+
+This requires gateway firmware supporting starting-position input in its
+engine-duel/virtual-board mode. The gateway firmware is a separate project;
+flashing this Core2 project does not update it. With a physical board, arrange
+the actual pieces in their starting squares after pressing A. No synthetic
+piece placement is sent to a normal physical-board connection.
+
+For gateway integration, the optional writable GATT characteristic is
+`773a1001-7e5b-4c2a-9d13-619b8e04f260`. It receives a complete 67-byte ChessLink
+`s` board frame, including parity/checksum and reversed-file wire ordering.
+This is a gateway extension for full starting positions, not a standard
+ChessLink reset command. Ordinary LED writes continue on their existing
+characteristic. Position-input support is discovered on connection.
 
 ## Certabo and Spectrum calibration
 
@@ -189,7 +245,7 @@ cached and updated every five seconds, including while the board is idle.
 
 The engine uses a 1 MiB transposition table in PSRAM, a 72 KiB internal search
 stack, a maximum search path of 20 plies and a 2.5-second move budget. These are
-fixed firmware choices, not user settings. MCU playing strength has not been
+fixed resource limits shared by Adaptive, full-strength play and Elo bots. MCU playing strength has not been
 measured. The RGB565 framebuffer is in PSRAM; analysis updates transfer the
 sidebar rather than clearing the visible chessboard.
 
@@ -207,7 +263,8 @@ ctest --test-dir build/tests -C Release --output-on-failure
 There are seven test executables: the Core2 game/mood suite, the Core2 Certabo
 adapter suite, and five original gateway regression suites. They cover move
 confirmation, castling, en passant, promotion, side changes, restart isolation,
-queen thresholds and mate scores, frame parsing, calibration, queen selection,
+queen thresholds and mate scores, full starting-position frame round trips and
+checksum rejection, frame parsing, calibration, queen selection,
 LED coordinates, colour interpolation and Spectrum blue correction. Assertions
 are enabled for the gateway tests even in Release builds.
 
@@ -231,7 +288,7 @@ python tools/generate_assets.py
 ```
 
 The development firmware also has local UART diagnostics at 115200 baud:
-`status` returns state and battery readings; `screenshot` emits a 320×240
+`status` returns state, engine mode, selected bot Elo/stage, menu and battery readings; `screenshot` emits a 320×240
 RGB565 image between its framing messages. The `tap X Y` and `testboard` test
 helpers modify the running test state and are not part of normal play. A reboot
 clears the virtual test board. Do not send test commands during a real game.

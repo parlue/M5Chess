@@ -57,6 +57,11 @@ inline std::vector<uint8_t> modeCommand(const std::string &payload) {
   out.push_back(parity(digits[sum & 15]));
   return out;
 }
+inline std::vector<uint8_t> modePosition(const Board &board) {
+  std::string payload = "s";
+  for (int i=0;i<64;++i) payload += board[(i/8)*8+7-i%8];
+  return modeCommand(payload);
+}
 inline bool chessnutFrame(const uint8_t *p, size_t len, Board &b) {
   if (len < 34 || p[0] != 1 || p[1] != 0x24)
     return false;

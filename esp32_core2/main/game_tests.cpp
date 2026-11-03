@@ -227,6 +227,9 @@ int main() {
     std::string mode = "s";
     for (int i = 0; i < 64; i++)
       mode += start[(i / 8) * 8 + 7 - i % 8];
+    auto positionWire = modePosition(start);
+    check(modeFrame(positionWire.data(),positionWire.size(),decoded) && decoded==start,
+          "full starting position round-trips without a reset command");
     auto wire = modeCommand(mode);
     check(modeFrame(wire.data(), wire.size(), decoded) && decoded == start,
           "ChessLink parity/checksum and reversed files decode correctly");

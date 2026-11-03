@@ -13,7 +13,7 @@ namespace core2 {
 namespace {
 std::mutex lock;
 LinkView view;
-std::atomic<bool> rescan{false};
+std::atomic<bool> rescan{false}, startingPosition{false};
 std::atomic<int> selected{-1};
 std::atomic<uint64_t> lights{0};
 std::atomic<int> ledEval{0};
@@ -22,6 +22,7 @@ uint32_t expectedSequence = 0;
 CertaboSession certaboSession;
 NimBLEClient *client = nullptr;
 NimBLERemoteCharacteristic *writer = nullptr;
+NimBLERemoteCharacteristic *positionWriter = nullptr;
 bool isNut = false, isCertabo = false;
 uint32_t lastWriteAt = 0;
 int failedWrites = 0;
@@ -91,7 +92,8 @@ bool connect(const Peer &peer) {
   }
   if (client->isConnected())
     client->disconnect();
-  writer = nullptr;
+  writer = positionWriter = nullptr;
+  startingPosition = false;
   isNut = peer.chessnut;
   isCertabo = peer.certabo;
   certaboSession.reset();
@@ -103,6 +105,7 @@ bool connect(const Peer &peer) {
     view.connecting = true;
     view.connected = false;
     view.haveBoard = false;
+    view.virtualPosition = false;
     view.certabo = isCertabo;
     view.spectrum = false;
     view.calibrating = isCertabo;
@@ -139,6 +142,7 @@ bool connect(const Peer &peer) {
   } else {
     auto *s = client->getService("49535343-fe7d-4ae5-8fa9-9fafd205e455");
     if (s) {
+      positionWriter = s->getCharacteristic("773a1001-7e5b-4c2a-9d13-619b8e04f260");
       writer = s->getCharacteristic("49535343-8841-43f4-a8d4-ecbe34729bb3");
       reader = s->getCharacteristic("49535343-1e4d-4bd9-ba61-23c647249616");
     }
@@ -164,6 +168,7 @@ bool connect(const Peer &peer) {
     std::lock_guard<std::mutex> g(lock);
     view.connecting = false;
     view.connected = true;
+    view.virtualPosition = positionWriter && positionWriter->canWrite();
     view.status = isCertabo ? certaboSession.status() : "Brett verbunden";
   }
   printf("CORE2 BOARD connected %s %s\n", peer.name.c_str(),
@@ -263,6 +268,18 @@ void task(void *) {
         }
       }
       if (client && client->isConnected() && writer) {
+        if (startingPosition.exchange(false) && positionWriter) {
+          // The payload is the complete starting board, not a reset opcode.
+          static constexpr char initial[] = "RNBQKBNRPPPPPPPP................................pppppppprnbqkbnr";
+          Board board{}; std::copy_n(initial,64,board.begin());
+          auto bytes = modePosition(board);
+          xQueueReset(packets); stream.clear(); expectedSequence = rxSequence.load();
+          { std::lock_guard<std::mutex> g(lock); view.haveBoard = false; }
+          const bool ok = positionWriter->writeValue(bytes.data(),bytes.size(),true);
+          printf("CORE2 START_POSITION sent=%d connected=%d\n",ok,client->isConnected());
+          sent = ~uint64_t(0); lastPoll = 0;
+          if (!ok) { std::lock_guard<std::mutex> g(lock); view.status = "Grundstellung nicht gesendet"; }
+        }
         Packet p{};
         while (xQueueReceive(packets, &p, 0) == pdTRUE) {
           if (p.sequence != expectedSequence) {
@@ -359,6 +376,7 @@ void task(void *) {
           view.connected = false;
           if (was) {
             view.haveBoard = false;
+            view.virtualPosition = false;
             view.calibrating = false;
             view.status = "Verbindung getrennt";
           }
@@ -389,6 +407,12 @@ void linkStart() {
 LinkView linkView() {
   std::lock_guard<std::mutex> g(lock);
   return view;
+}
+bool linkStartingPosition() {
+  std::lock_guard<std::mutex> g(lock);
+  if (!view.connected || !view.virtualPosition) return false;
+  startingPosition = true;
+  return true;
 }
 void linkScan() { rescan = true; }
 void linkChoose(unsigned i) { selected = int(i); }

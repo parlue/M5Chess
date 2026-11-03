@@ -1,7 +1,8 @@
 # M5Chess – Virgin auf dem M5Stack Core2
 
 Eine eigenständige Schachanwendung von **Dirk D. Sommerfeld**. Die Virgin-Engine
-läuft direkt auf dem Core2, immer im Adaptive-Modus. Zum Spielen werden weder
+läuft direkt auf dem Core2 und startet im Adaptive-Modus. Zusätzlich stehen volle
+Stärke und Elo-Bots zur Auswahl. Zum Spielen werden weder
 Handy noch PC, Internetzugang oder externe Engine-Netzdateien benötigt.
 
 **[English documentation: build, installation and user guide](docs/ENGLISH.md)**
@@ -12,7 +13,9 @@ Handy noch PC, Internetzugang oder externe Engine-Netzdateien benötigt.
 
 - Grafisches Schachbrett mit scharfen Merida-Figuren und flackerfreier PSRAM-Darstellung.
 - Manuelles Verbinden mit einem Bluetooth-Schachbrett; keine automatische Suche oder Wiederverbindung.
-- Neue Partie durch Zurückstellen aller Figuren in die Grundstellung.
+- Neue Partie durch Grundstellung oder Taste **A**; am virtuellen Gateway wird die komplette Grundstellung weitergegeben.
+- Taste **B** schaltet zwischen Adaptive und voller Stärke um.
+- Taste **C** öffnet 17 Elo-Kacheln von **900 bis 2500** in 100er-Schritten, alle mit **Fire (Stufe 4 von 5)**.
 - **Move** übergibt die Seite am Zug an Virgin und dreht die Ansicht. So spielt Virgin auf Wunsch Weiß.
 - Engine-Zug sofort auf dem Display, danach am echten Brett nachziehen.
 - Suchtiefe, Bewertung aus Sicht von Weiß und Hauptvariante während der Suche.
@@ -104,9 +107,60 @@ angezeigter, noch nicht nachgezogener Engine-Zug muss zuerst am Brett ausgeführ
 werden; in dieser Situation führt Move keinen weiteren Zug aus.
 
 Für eine neue Partie alle Figuren wieder in die Grundstellung stellen. Der
-Core2 löscht die Partie und beginnt mit dir als Weiß. Wiederholte identische
+Core2 löscht die Partie und beginnt mit dir als Weiß. Alternativ **A / Neu**
+drücken; bei einem echten Brett anschließend die Figuren aufbauen. Wiederholte identische
 Grundstellungsmeldungen unterbrechen keinen schon gestarteten Eröffnungszug.
 Eine Partie wird nicht dauerhaft gespeichert.
+
+## Die drei Tasten und Engine-Modi
+
+Die drei berührungsempfindlichen Tasten liegen **unter dem Display**; gemeint
+sind nicht die seitlichen Ein-/Aus-Tasten. Die Kürzel in der Kopfzeile lassen
+sich ebenfalls antippen.
+
+| Taste | Funktion |
+|---|---|
+| **A / Neu**, links | Neue Partie mit vollständiger Grundstellung und dir als Weiß. Die bestehende Brettverbindung bleibt erhalten. |
+| **B / Mod**, Mitte | Zwischen **ADAPTIV** und **VOLLE KRAFT** wechseln; ein zuvor gewählter Elo-Bot wird verlassen. |
+| **C / Bot**, rechts | Elo-Auswahl öffnen oder schließen. Gewünschte Kachel antippen. |
+
+**Adaptive** ist der Modus nach dem Einschalten: Virgin rechnet mit voller
+Geschwindigkeit und passt die Zugauswahl an. **Volle Kraft** deaktiviert
+Adaptive und die Elo-Begrenzung, mit dem Profil Normal. Das feste Suchbudget
+bleibt in allen Modi 2,5 Sekunden pro Zug; volle Stärke bedeutet keine längere
+Denkzeit.
+
+Die **Elo-Auswahl** zeigt alle 17 Stufen gleichzeitig in vier Spalten und fünf
+Reihen. Die aktuelle Auswahl ist markiert; **Zurück** schließt die Auswahl ohne
+Änderung. Jeder Elo-Bot verwendet Fire, die vierte von fünf Stil-Stufen. Die
+Elo-Zahlen sind die Zielwerte der Engine-Begrenzung, keine auf dem Core2
+vermessenen Turnierwertungen. Moduswechsel und Bot-Auswahl erhalten die Partie
+und die Verbindung. Eine neue Partie behält den gewählten Modus bzw. Bot bei;
+nach dem Ausschalten beginnt das Gerät wieder mit Adaptive.
+
+![Elo-Kacheln auf dem Core2](docs/images/bot-tiles.png)
+
+## Engine gegen Engine über das Gateway
+
+Für ein Duell kann der Core2 per Bluetooth mit dem virtuellen Brett des
+[eChessGateway](https://github.com/parlue/eChessGw) verbunden werden, während
+zum Beispiel ein Millennium Phönix am seriellen Interface des Gateways hängt.
+Der Core2 verwendet dabei dieselbe Bestätigung vollständiger Brettstellungen
+wie mit einem echten Brett. Auch bei Schlagzügen und Umwandlungen zählt die
+erkannte Figur auf dem Zielfeld; ein Bauer wird nicht pauschal zur Dame.
+
+**A / Neu** setzt die Partie im Core2 zurück und sendet alle 64 Felder der
+Grundstellung an ein kompatibles virtuelles Gateway. Dieses reicht die Stellung
+an beide Seiten weiter. Der Phönix erkennt die Grundstellung selbst; es wird
+kein Neustartbefehl an ihn gesendet. Geräte und Bluetooth-Verbindung müssen
+dafür nicht neu gestartet werden.
+
+Das Gateway benötigt dafür die Firmware mit der Unterstützung zur übernahme
+der Grundstellung im Engine-gegen-Engine-Modus. Die Core2-Firmware erkennt diese
+Fähigkeit beim Verbinden. An einem echten E-Board bleibt das physische Aufbauen
+aller Figuren erforderlich; Taste A ersetzt dort keine Figurenbewegung.
+Die Gateway-Firmware ist ein separates Projekt und gehört nicht zum
+Core2-Upload in diesem Repository.
 
 ## Certabo und Spectrum einlernen
 
@@ -154,8 +208,10 @@ ctest --test-dir build/tests -C Release --output-on-failure
 ```
 
 Die sieben Testprogramme prüfen Spielmodell, Seitenwechsel, Neustart,
-Damenbewertung sowie Certabo/Spectrum-Protokoll und LEDs. Der zuletzt installierte Akku-Stand
-wurde auf einem Core2 gebaut, aufgespielt und per Displayaufnahme geprüft.
+Damenbewertung sowie Certabo/Spectrum-Protokoll und LEDs. Die Protokolltests
+prüfen auch die Übertragung der vollständigen Grundstellung einschließlich
+Prüfsumme. Der Stand mit den Elo-Kacheln wurde auf dem Core2 gebaut, aufgespielt
+und mit tatsächlichen Displayaufnahmen und Konfigurationsausgaben geprüft.
 
 Die benötigten Bildtabellen liegen bereits im Quellcode; Pillow ist zum Bauen
 der Firmware nicht erforderlich. Zum erneuten Erzeugen aus den mitgelieferten

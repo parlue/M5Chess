@@ -38,7 +38,9 @@ std::mutex ioLock;
 std::condition_variable inputReady;
 std::deque<Command> commands;
 std::deque<Reply> replies;
-std::atomic<unsigned> searchEpoch{0};
+std::atomic<unsigned> searchEpoch{0}, controlEpoch{0}, commandEpoch{0};
+bool adaptiveMode = true, engineReady = false;
+int botElo = 0; // zero means Adaptive or full strength, not an Elo-limited bot
 bool engineOnline = false;
 bool virtualBoard = false;
 Game game;
@@ -57,6 +59,8 @@ struct Input : std::streambuf {
     inputReady.wait(lock, [] { return !commands.empty(); });
     auto item = std::move(commands.front());
     commands.pop_front();
+    commandEpoch = item.epoch;
+    if (item.text == "isready") controlEpoch = item.epoch;
     if (item.text.rfind("go ", 0) == 0)
       searchEpoch = item.epoch;
     line = std::move(item.text);
@@ -74,6 +78,13 @@ struct Output : std::streambuf {
     if (c == '\n') {
       // The UI consumes only complete lines, never from a BLE callback.
       std::lock_guard<std::mutex> lock(ioLock);
+      if (line == "readyok") replies.push_back({line, controlEpoch.load()});
+      if (line.rfind("info string style ",0)==0 ||
+          line.rfind("info string elo ",0)==0 ||
+          line.rfind("info string strength limited ",0)==0 ||
+          line.rfind("info string full strength",0)==0 ||
+          line.rfind("info string Adaptive ",0)==0)
+        replies.push_back({line,commandEpoch.load()});
       if (line.rfind("info depth ", 0) == 0 &&
           (line.find(" multipv ") == std::string::npos ||
            line.find(" multipv 1 ") != std::string::npos)) {
@@ -132,7 +143,8 @@ bool initEngine() {
   return xTaskCreatePinnedToCore(engineTask, "virgin_uci", 12288, nullptr, 3,
                                  nullptr, 1) == pdPASS;
 }
-enum class Menu { None, Boards };
+enum class Menu { None, Boards, Bots };
+constexpr int botMin = 900, botMax = 2500, botStep = 100;
 Menu menu = Menu::None;
 M5Canvas frame(&M5.Display);
 bool dirty = true;
@@ -185,13 +197,62 @@ void pill(int x, int y, int w, int h, const std::string &label,
   int tw = frame.textWidth(label.c_str());
   frame.drawString(label.c_str(), x + (w - tw) / 2, y + (h - 16) / 2);
 }
+void configureEngine(bool newGame) {
+  engineReady = false;
+  // Discard queued searches from the previous UI epoch before reconfiguring.
+  { std::lock_guard<std::mutex> lock(ioLock); commands.clear(); }
+  command("stop", game.epoch);
+  if (newGame) command("ucinewgame", game.epoch);
+  // Leave Adaptive before restoring a concrete style/handicap. Clearing the
+  // old handicap first makes Bot -> Full -> Adaptive transitions independent.
+  command("setoption name Adaptive value false",game.epoch);
+  command("setoption name UCI_LimitStrength value false",game.epoch);
+  command(std::string("setoption name Style value ")+(botElo ? "Fire" : "Normal"),game.epoch);
+  if (botElo) {
+    command("setoption name UCI_Elo value "+std::to_string(botElo),game.epoch);
+    command("setoption name UCI_LimitStrength value true",game.epoch);
+  } else if (adaptiveMode) command("setoption name Adaptive value true",game.epoch);
+  // Only start the next search after the old worker has joined and options applied.
+  command("isready", game.epoch);
+}
 void resetEngineGame() {
   thoughts = {};
-  command("stop", game.epoch);
-  command("ucinewgame", game.epoch);
-  command("setoption name Adaptive value true", game.epoch);
+  configureEngine(true);
   dirty = true;
-  printf("CORE2 AUTO_NEW_GAME epoch=%u adaptive=true\n", game.epoch);
+  printf("CORE2 NEW_GAME epoch=%u adaptive=%d\n",game.epoch,adaptiveMode);
+}
+void newGameButton() {
+  const auto link = linkView();
+  seenRevision = link.revision;
+  game.start(Color::WHITE);
+  resetEngineGame();
+  menu = Menu::None;
+  const bool sent = linkStartingPosition();
+  if (!sent && link.haveBoard) game.board(link.board);
+  if (virtualBoard) game.board(Game::diagram(game.pos));
+  printf("CORE2 NEW_GAME_BUTTON position=%d connection_preserved=%d\n",sent,link.connected);
+}
+void modeButton() {
+  adaptiveMode = !adaptiveMode;
+  botElo = 0;
+  ++game.epoch;
+  game.thinking = false;
+  game.mood.beginSearch();
+  configureEngine(false);
+  dirty = true;
+  printf("CORE2 MODE adaptive=%d epoch=%u\n",adaptiveMode,game.epoch);
+}
+void botButton() {
+  menu = menu == Menu::Bots ? Menu::None : Menu::Bots;
+  dirty = true;
+}
+void chooseBot(int elo) {
+  if (elo<botMin || elo>botMax || (elo-botMin)%botStep) return;
+  botElo = elo; adaptiveMode = false;
+  ++game.epoch; game.thinking = false; game.mood.beginSearch();
+  configureEngine(false);
+  menu = Menu::None; dirty = true;
+  printf("CORE2 BOT elo=%d style=Fire stage=4 epoch=%u\n",botElo,game.epoch);
 }
 void receiveBoard(const Board &board) {
   unsigned previousEpoch = game.epoch;
@@ -202,7 +263,7 @@ void receiveBoard(const Board &board) {
 }
 void moveButton() {
   const auto link = linkView();
-  if (!engineOnline || link.calibrating || (!link.connected && !virtualBoard))
+  if (!engineOnline || !engineReady || link.calibrating || (!link.connected && !virtualBoard))
     return;
   if (game.thinking)
     command("stop", game.epoch);
@@ -252,7 +313,9 @@ void draw(const LinkView &link) {
   frame.fillScreen(bg);
   text(8, 3, "Virgin");
   frame.fillRoundRect(184, 4, 70, 17, 6, panel);
-  text(198, 8, "ADAPTIV", accent, true);
+  text(69, 8, "A:Neu B:Mod C:Bot", muted, true);
+  text(botElo ? 194 : (adaptiveMode ? 198 : 189),8,
+       botElo ? std::to_string(botElo)+" Elo" : (adaptiveMode ? "ADAPTIV" : "VOLLE KRAFT"),accent,true);
   drawBattery();
   frame.drawFastHLine(8, 23, 304, panel);
   Board board = game.displayBoard();
@@ -342,11 +405,24 @@ void draw(const LinkView &link) {
     pill(8, 207, 151, 28, "Neu suchen");
     pill(174, 207, 138, 28, "Zurueck", panel);
   }
+  if (menu == Menu::Bots) {
+    frame.fillRect(0,24,320,216,bg);
+    text(10,30,"Elo auswaehlen");
+    text(222,35,"Fire / Stufe 4",accent,true);
+    for (int index=0;index<17;++index) {
+      const int elo=botMin+index*botStep;
+      const int x=8+(index%4)*78, y=49+(index/4)*38;
+      pill(x,y,70,32,std::to_string(elo),elo==botElo ? button : panel);
+      if (elo==botElo) frame.drawRoundRect(x,y,70,32,7,accent);
+    }
+    pill(86,201,226,32,"Zurueck",panel);
+  }
   frame.endWrite();
   // A completed frame reaches the LCD in one transfer, without exposing clears.
   static bool first = true;
   static int previousBattery = -2;
-  static bool previousCharging = false;
+  static bool previousCharging = false, previousAdaptive = true;
+  static int previousBotElo = 0;
   static Board previousBoard{};
   static uint64_t previousDiff = 0;
   static Move previousHighlight = 0;
@@ -358,7 +434,7 @@ void draw(const LinkView &link) {
                    game.human == previousHuman;
   M5.Display.startWrite();
   if (panelOnly) {
-    if (previousBattery != batteryLevel || previousCharging != batteryCharging) {
+    if (previousBattery != batteryLevel || previousCharging != batteryCharging || previousAdaptive != adaptiveMode || previousBotElo != botElo) {
       M5.Display.setClipRect(180,0,140,24);
       frame.pushSprite(0,0);
     }
@@ -368,6 +444,8 @@ void draw(const LinkView &link) {
   M5.Display.clearClipRect();
   M5.Display.endWrite();
   first = false;
+  previousAdaptive = adaptiveMode;
+  previousBotElo = botElo;
   previousBattery = batteryLevel;
   previousCharging = batteryCharging;
   previousBoard = board;
@@ -378,7 +456,22 @@ void draw(const LinkView &link) {
   dirty = false;
 }
 void tap(int x, int y) {
-  if (menu == Menu::Boards) {
+  if (y >= 240) return;
+  if (menu == Menu::None && y < 24 && x >= 70 && x < 255) {
+    if (x < 110) newGameButton();
+    else if (x >= 146 && x < 184) botButton();
+    else modeButton();
+    return;
+  }
+  if (menu == Menu::Bots) {
+    if (x>=86 && x<312 && y>=201 && y<233) menu = Menu::None;
+    else if (x>=8 && x<312 && y>=49 && y<233) {
+      const int column=(x-8)/78, row=(y-49)/38;
+      const int index=row*4+column;
+      if ((x-8)%78<70 && (y-49)%38<32 && index<17)
+        chooseBot(botMin+index*botStep);
+    }
+  } else if (menu == Menu::Boards) {
     auto l = linkView();
     if (y >= 54 && y < 199 && x >= 8 && x < 312 && !l.scanning &&
         !l.connecting) {
@@ -428,14 +521,14 @@ void diagnostics() {
       std::string state(game.physical.begin(), game.physical.end());
       printf("CORE2 STATUS engine=%d depth=%d connected=%d scanning=%d "
              "connecting=%d certabo=%d spectrum=%d calibrating=%d setup=%d thinking=%d ended=%d epoch=%u "
-             "human=%s pending=%s moves=%u adaptive=true mood=%d player_eval=%d board=%s "
+             "human=%s pending=%s moves=%u adaptive=%s bot_elo=%d bot_stage=%d menu=%d mood=%d player_eval=%d board=%s "
              "free_internal=%u free_psram=%u battery=%d charging=%d\n",
              engineOnline, thoughts.depth, l.connected, l.scanning,
              l.connecting, l.certabo, l.spectrum, l.calibrating,
              game.setup, game.thinking, game.ended, game.epoch,
              game.human == Color::WHITE ? "white" : "black",
              game.pending ? move_to_uci(game.pending).c_str() : "none",
-             unsigned(game.moves.size()), QueenMood::stage(game.mood.playerEval),
+             unsigned(game.moves.size()), adaptiveMode ? "true" : "false", botElo, botElo ? 4 : 0, int(menu), QueenMood::stage(game.mood.playerEval),
              game.mood.playerEval, state.c_str(),
              unsigned(heap_caps_get_free_size(MALLOC_CAP_INTERNAL)),
              unsigned(heap_caps_get_free_size(MALLOC_CAP_SPIRAM)),
@@ -443,6 +536,9 @@ void diagnostics() {
     } else if (line == "screenshot")
       screenshot();
 #ifdef VIRGIN_CORE2_DIAGNOSTICS
+    else if (line == "newgame") newGameButton();
+    else if (line == "mode") modeButton();
+    else if (line == "bots") botButton();
     else if (line.rfind("tap ", 0) == 0) {
       int x, y;
       if (sscanf(line.c_str(), "tap %d %d", &x, &y) == 2)
@@ -489,8 +585,7 @@ extern "C" void app_main() {
   text(10, 40, "Virgin startet...");
   game.start(Color::WHITE);
   if (engineOnline) {
-    command("setoption name Adaptive value true", game.epoch);
-    command("ucinewgame", game.epoch);
+    configureEngine(true);
   }
   printf("CORE2 READY engine=%d psram=%u free_internal=%u adaptive=true\n",
          engineOnline, unsigned(esp_psram_get_size()),
@@ -500,9 +595,11 @@ extern "C" void app_main() {
   while (true) {
     M5.update();
     updateBattery();
+    if (M5.BtnA.wasClicked()) newGameButton();
+    if (M5.BtnB.wasClicked()) modeButton();
+    if (M5.BtnC.wasClicked()) botButton();
     auto touch = M5.Touch.getDetail();
-    if (touch.wasReleased())
-      tap(touch.x, touch.y);
+    if (touch.wasClicked()) tap(touch.x,touch.y);
     auto link = linkView();
     if (virtualBoard) {
       link.connected = true;
@@ -529,6 +626,15 @@ extern "C" void app_main() {
     for (const auto &reply : received) {
       if (reply.epoch != game.epoch)
         continue;
+      if (reply.text == "readyok") { engineReady = true; continue; }
+      if (reply.text.rfind("info string style ",0)==0 ||
+          reply.text.rfind("info string elo ",0)==0 ||
+          reply.text.rfind("info string strength limited ",0)==0 ||
+          reply.text.rfind("info string full strength",0)==0 ||
+          reply.text.rfind("info string Adaptive ",0)==0) {
+        printf("CORE2 ENGINE_CONFIG %s\n",reply.text.c_str());
+        continue;
+      }
       if (reply.text.rfind("info depth ", 0) == 0) {
         std::istringstream info(reply.text);
         std::string token;
@@ -572,7 +678,7 @@ extern "C" void app_main() {
         }
       }
     }
-    if (engineOnline && link.connected && (link.haveBoard || virtualBoard) &&
+    if (engineOnline && engineReady && link.connected && (link.haveBoard || virtualBoard) &&
         game.needsEngine()) {
       searchWhite = game.pos.sideToMove() == Color::WHITE;
       game.thinking = true;

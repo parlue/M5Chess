@@ -13,7 +13,7 @@ struct Peer {
 struct LinkView {
   bool scanning = false, connecting = false, connected = false,
        haveBoard = false;
-  bool certabo = false, spectrum = false, calibrating = false;
+  bool certabo = false, spectrum = false, calibrating = false, virtualPosition = false;
   unsigned revision = 0;
   std::string name, status = "Nicht verbunden";
   Board board{};
@@ -21,6 +21,7 @@ struct LinkView {
   unsigned count = 0;
 };
 void linkStart();
+bool linkStartingPosition();
 LinkView linkView();
 void linkScan();
 void linkChoose(unsigned index);
